@@ -5,22 +5,25 @@ import { Sidebar } from './components/layout/Sidebar'
 import { TreeView } from './components/views/TreeView'
 import { KanbanView } from './components/views/KanbanView'
 import { TimelineView } from './components/views/TimelineView'
+import FlowchartView from './components/views/FlowchartView';
 
 function App() {
-  const { currentView } = useStore()
+  const { currentView } = useStore();
 
   const renderCurrentView = () => {
     switch (currentView) {
       case 'tree':
-        return <TreeView />
+        return <TreeView />;
       case 'kanban':
-        return <KanbanView />
+        return <KanbanView />;
       case 'timeline':
-        return <TimelineView />
+        return <TimelineView />;
+      case 'flowchart':
+        return <FlowchartView />;
       default:
-        return <TreeView />
+        return <TreeView />;
     }
-  }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -32,7 +35,7 @@ function App() {
         </main>
       </div>
     </div>
-  )
+  );
 }
 
 export default App

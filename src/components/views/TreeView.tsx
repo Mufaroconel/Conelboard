@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/Textarea'
 import { Plus, Zap } from 'lucide-react'
+import dagre from 'dagre';
 
 const nodeTypes = {
   module: ModuleNode,
@@ -35,10 +36,11 @@ export const TreeView: React.FC = () => {
     description: '',
     color: '#00C853',
   })
+  // Fix status for new tasks to use a valid TaskStatus
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
-    status: 'todo' as const,
+    status: 'icebox' as const,
     priority: 'medium' as const,
     tags: [] as string[],
     subtasks: [] as any[],
@@ -48,6 +50,9 @@ export const TreeView: React.FC = () => {
   // --- FIX: Move hooks to top level ---
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
+
+  // Add state for manual override
+  const [manualLayout, setManualLayout] = useState(false);
 
   // --- Update nodes/edges when currentProject changes ---
   React.useEffect(() => {
@@ -137,21 +142,64 @@ export const TreeView: React.FC = () => {
           target: task.id,
           type: 'smoothstep',
           style: { 
-            stroke: task.status === 'done' ? '#4CAF50' : '#94A3B8', 
+            stroke: (task.status === 'complete') ? '#4CAF50' : '#94A3B8', 
             strokeWidth: 2 
           },
           animated: task.status === 'in-progress',
         })
       })
     })
-    setNodes(initialNodes)
+    // After building nodes/edges, run dagre layout
+    let layoutedNodes = getDagreLayoutedNodes(initialNodes, initialEdges, 'TB');
+    setNodes(layoutedNodes)
     setEdges(initialEdges)
-  }, [currentProject, setNodes, setEdges])
+  }, [currentProject, setNodes, setEdges, manualLayout])
+
+  // Helper: run dagre layout
+  function getDagreLayoutedNodes(nodes: Node[], edges: Edge[], direction: 'TB' | 'LR' = 'TB') {
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: direction });
+    nodes.forEach((node) => {
+      // Use a default size or node.data.size if available
+      g.setNode(node.id, { width: 220, height: 80 });
+    });
+    edges.forEach((edge) => {
+      g.setEdge(edge.source, edge.target);
+    });
+    dagre.layout(g);
+    return nodes.map((node) => {
+      const pos = g.node(node.id);
+      // Only keep manual position if .position.manual === true
+      if (node.position && (node.position as any).manual) {
+        return node;
+      }
+      return {
+        ...node,
+        position: { x: pos.x - 110, y: pos.y - 40 },
+        data: {
+          ...node.data,
+          manual: false,
+        },
+      };
+    });
+  }
+
+  // On node drag, set manual position
+  const onNodeDragStop = useCallback((event: React.MouseEvent | React.TouchEvent, node: Node) => {
+    setNodes((nds) => nds.map((n) =>
+      n.id === node.id
+        ? { ...n, position: { ...node.position, manual: true }, data: { ...n.data, manual: true } }
+        : n
+    ));
+    setManualLayout(true);
+  }, [setNodes]);
 
   const handleCreateModule = () => {
     if (currentProject && newModule.title.trim()) {
       createModule(currentProject.id, {
         ...newModule,
+        projectId: currentProject.id,
         position: { x: Math.random() * 400 + 200, y: Math.random() * 200 + 300 },
       })
       setNewModule({ title: '', description: '', color: '#00C853' })
@@ -161,11 +209,15 @@ export const TreeView: React.FC = () => {
 
   const handleCreateTask = () => {
     if (selectedModuleId && newTask.title.trim()) {
-      createTask(selectedModuleId, newTask)
+      createTask(selectedModuleId, {
+        ...newTask,
+        moduleId: selectedModuleId,
+        status: newTask.status as any, // already a valid TaskStatus
+      })
       setNewTask({
         title: '',
         description: '',
-        status: 'todo',
+        status: 'icebox',
         priority: 'medium',
         tags: [],
         subtasks: [],
@@ -204,6 +256,7 @@ export const TreeView: React.FC = () => {
           nodeTypes={nodeTypes}
           fitView
           className="bg-gray-50"
+          onNodeDragStop={onNodeDragStop}
         >
           <Background color="#e5e7eb" gap={20} />
           <Controls className="bg-white border border-gray-200 rounded-lg shadow-sm" />
@@ -212,6 +265,10 @@ export const TreeView: React.FC = () => {
             nodeColor="#00C853"
             maskColor="rgba(0, 0, 0, 0.1)"
           />
+          <Button onClick={() => {
+            setNodes(nds => nds.map(n => ({ ...n, position: { x: 0, y: 0 }, data: { ...n.data, manual: false } })));
+            setManualLayout(false);
+          }} variant="outline" className="ml-2">Reset Layout</Button>
         </ReactFlow>
       </div>
 

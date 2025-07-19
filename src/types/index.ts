@@ -1,6 +1,6 @@
 export type Priority = 'low' | 'medium' | 'high' | 'urgent'
-export type TaskStatus = 'icebox' | 'todo' | 'in-progress' | 'testing' | 'done'
-export type ViewType = 'tree' | 'kanban' | 'timeline'
+export type TaskStatus = 'icebox' | 'emergency' | 'in-progress' | 'testing' | 'complete'
+export type ViewType = 'tree' | 'kanban' | 'timeline' | 'flowchart'
 
 export interface Subtask {
   id: string
@@ -49,6 +49,12 @@ export interface Project {
   updatedAt: Date
   tags: string[]
   deadline?: Date
+  flowcharts?: Array<{
+    id: string
+    name: string
+    nodes: any[]
+    edges: any[]
+  }>
 }
 
 export interface AppState {
@@ -85,6 +91,12 @@ export interface AppState {
   
   exportProject: (projectId: string) => string
   importProject: (data: string) => void
+  setProjectFlowchart: (projectId: string, flowchartId: string, nodes: any[], edges: any[]) => void
+  createProjectFlowchart: (projectId: string, name: string) => void
+  setCurrentFlowchartId: (flowchartId: string) => void
+  syncFlowchartSubtasksToMainKanban: (projectId: string, flowchartId: string, nodeId: string, subtasks: any[]) => void
+  updateFlowchartSubtaskStatus: (projectId: string, flowchartId: string, nodeId: string, subtaskId: string, newStatus: TaskStatus) => void
+  currentFlowchartId?: string
 }
 
 export interface NodeData {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { AppState, Project, Module, Task, Subtask, ViewType } from '../types'
+import { AppState, Project, Module, Task, Subtask, ViewType, TaskStatus } from '../types'
 import { generateId, playSound, createConfetti } from '../lib/utils'
 
 export const useStore = create<AppState>()(
@@ -11,6 +11,7 @@ export const useStore = create<AppState>()(
       currentView: 'tree' as ViewType,
       searchQuery: '',
       selectedTags: [],
+      currentFlowchartId: undefined,
 
       createProject: (projectData) => {
         const project: Project = {
@@ -20,6 +21,7 @@ export const useStore = create<AppState>()(
           tags: projectData.tags ?? [],
           createdAt: new Date(),
           updatedAt: new Date(),
+          flowcharts: [],
         }
         
         set((state) => ({
@@ -196,7 +198,7 @@ export const useStore = create<AppState>()(
       },
 
       updateTask: (id, updates) => {
-        const wasCompleted = updates.status === 'done'
+        const wasCompleted = updates.status === 'complete'
         
         set((state) => ({
           projects: state.projects.map((project) => ({
@@ -243,6 +245,148 @@ export const useStore = create<AppState>()(
             console.warn('Sound playback failed:', error)
           }
         }
+      },
+
+      // Add function to sync flowchart subtasks to main project tasks
+      syncFlowchartSubtasksToMainKanban: (projectId: string, flowchartId: string, nodeId: string, subtasks: any[]) => {
+        set((state) => {
+          const project = state.projects.find(p => p.id === projectId);
+          if (!project) return state;
+
+          // Find or create a module for flowchart tasks
+          let flowchartModule = project.modules.find(m => m.title === 'Flowchart Tasks');
+          if (!flowchartModule) {
+            flowchartModule = {
+              id: generateId(),
+              title: 'Flowchart Tasks',
+              description: 'Tasks from flowchart nodes',
+              color: '#6366F1',
+              tasks: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              projectId,
+              position: { x: 0, y: 0 }
+            };
+          }
+
+          // Convert subtasks to main tasks
+          const newTasks = subtasks.map((subtask: any) => ({
+            id: subtask.id,
+            title: subtask.title,
+            description: `Subtask from flowchart node: ${nodeId}`,
+            status: subtask.status || 'icebox',
+            priority: 'medium' as const,
+            tags: ['flowchart', 'subtask'],
+            subtasks: [],
+            timeSpent: 0,
+            isTimerRunning: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            moduleId: flowchartModule!.id,
+            assignee: undefined,
+            notes: ''
+          }));
+
+          // Update or add tasks
+          const updatedTasks = [...flowchartModule!.tasks];
+          newTasks.forEach(newTask => {
+            const existingIndex = updatedTasks.findIndex(t => t.id === newTask.id);
+            if (existingIndex >= 0) {
+              updatedTasks[existingIndex] = newTask;
+            } else {
+              updatedTasks.push(newTask);
+            }
+          });
+
+          const updatedModule = { ...flowchartModule!, tasks: updatedTasks, updatedAt: new Date() };
+
+          return {
+            projects: state.projects.map((project) =>
+              project.id === projectId
+                ? {
+                    ...project,
+                    modules: project.modules.some(m => m.id === flowchartModule!.id)
+                      ? project.modules.map(m => m.id === flowchartModule!.id ? updatedModule : m)
+                      : [...project.modules, updatedModule],
+                    updatedAt: new Date(),
+                  }
+                : project
+            ),
+            currentProject: state.currentProject?.id === projectId
+              ? {
+                  ...state.currentProject,
+                  modules: state.currentProject.modules.some(m => m.id === flowchartModule!.id)
+                    ? state.currentProject.modules.map(m => m.id === flowchartModule!.id ? updatedModule : m)
+                    : [...state.currentProject.modules, updatedModule],
+                  updatedAt: new Date(),
+                }
+              : state.currentProject,
+          };
+        });
+      },
+
+      // Add function to update flowchart subtask status
+      updateFlowchartSubtaskStatus: (projectId: string, flowchartId: string, nodeId: string, subtaskId: string, newStatus: TaskStatus) => {
+        set((state) => ({
+          projects: state.projects.map((project) =>
+            project.id === projectId
+              ? {
+                  ...project,
+                  flowcharts: (project.flowcharts || []).map((fc) =>
+                    fc.id === flowchartId
+                      ? {
+                          ...fc,
+                          nodes: fc.nodes.map((node) =>
+                            node.id === nodeId
+                              ? {
+                                  ...node,
+                                  data: {
+                                    ...node.data,
+                                    subtasks: (node.data.subtasks || []).map((subtask: any) =>
+                                      subtask.id === subtaskId
+                                        ? { ...subtask, status: newStatus }
+                                        : subtask
+                                    ),
+                                  },
+                                }
+                              : node
+                          ),
+                        }
+                      : fc
+                  ),
+                  updatedAt: new Date(),
+                }
+              : project
+          ),
+          currentProject: state.currentProject?.id === projectId
+            ? {
+                ...state.currentProject,
+                flowcharts: (state.currentProject.flowcharts || []).map((fc) =>
+                  fc.id === flowchartId
+                    ? {
+                        ...fc,
+                        nodes: fc.nodes.map((node) =>
+                          node.id === nodeId
+                            ? {
+                                ...node,
+                                data: {
+                                  ...node.data,
+                                  subtasks: (node.data.subtasks || []).map((subtask: any) =>
+                                    subtask.id === subtaskId
+                                      ? { ...subtask, status: newStatus }
+                                      : subtask
+                                  ),
+                                },
+                              }
+                            : node
+                        ),
+                      }
+                    : fc
+                ),
+                updatedAt: new Date(),
+              }
+            : state.currentProject,
+        }));
       },
 
       deleteTask: (id) => {
@@ -542,6 +686,65 @@ export const useStore = create<AppState>()(
           console.error('Failed to import project:', error)
           return false
         }
+      },
+      createProjectFlowchart: (projectId: string, name: string) => {
+        const flowchartId = generateId();
+        set((state) => ({
+          projects: state.projects.map((project) =>
+            project.id === projectId
+              ? {
+                  ...project,
+                  flowcharts: [
+                    ...(project.flowcharts || []),
+                    { id: flowchartId, name, nodes: [], edges: [] },
+                  ],
+                  updatedAt: new Date(),
+                }
+              : project
+          ),
+          currentProject:
+            state.currentProject?.id === projectId
+              ? {
+                  ...state.currentProject,
+                  flowcharts: [
+                    ...(state.currentProject.flowcharts || []),
+                    { id: flowchartId, name, nodes: [], edges: [] },
+                  ],
+                  updatedAt: new Date(),
+                }
+              : state.currentProject,
+          currentFlowchartId: flowchartId,
+        }))
+      },
+
+      setProjectFlowchart: (projectId: string, flowchartId: string, nodes: any[], edges: any[]) => {
+        set((state) => ({
+          projects: state.projects.map((project) =>
+            project.id === projectId
+              ? {
+                  ...project,
+                  flowcharts: (project.flowcharts || []).map((fc) =>
+                    fc.id === flowchartId ? { ...fc, nodes, edges } : fc
+                  ),
+                  updatedAt: new Date(),
+                }
+              : project
+          ),
+          currentProject:
+            state.currentProject?.id === projectId
+              ? {
+                  ...state.currentProject,
+                  flowcharts: (state.currentProject.flowcharts || []).map((fc) =>
+                    fc.id === flowchartId ? { ...fc, nodes, edges } : fc
+                  ),
+                  updatedAt: new Date(),
+                }
+              : state.currentProject,
+        }))
+      },
+
+      setCurrentFlowchartId: (flowchartId: string) => {
+        set({ currentFlowchartId: flowchartId })
       },
     }),
     {

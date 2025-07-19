@@ -13,7 +13,8 @@ import {
   Zap,
   TreePine,
   Kanban,
-  Calendar
+  Calendar,
+  Share2
 } from 'lucide-react'
 
 export const Header: React.FC = () => {
@@ -70,6 +71,7 @@ export const Header: React.FC = () => {
     tree: TreePine,
     kanban: Kanban,
     timeline: Calendar,
+    flowchart: Share2,
   }
 
   return (
@@ -106,8 +108,8 @@ export const Header: React.FC = () => {
 
             {/* View Switcher */}
             <div className="flex items-center bg-gray-100 rounded-lg p-1">
-              {(['tree', 'kanban', 'timeline'] as const).map((view) => {
-                const Icon = viewIcons[view]
+              {(['tree', 'kanban', 'timeline', 'flowchart'] as const).map((view) => {
+                const Icon = viewIcons[view];
                 return (
                   <Button
                     key={view}
@@ -119,7 +121,7 @@ export const Header: React.FC = () => {
                     <Icon className="h-4 w-4 mr-1" />
                     {view}
                   </Button>
-                )
+                );
               })}
             </div>
 
